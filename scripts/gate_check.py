@@ -215,11 +215,12 @@ def _check_evidence(
                     f"图表清单第 {index + 1} 条缺少字段：{field}",
                     [manifest_path.as_posix()],
                 )
-    if not (root / VISUAL_QA_PATH).is_file():
+    visual_reports = sorted(root.glob("figures/**/*.visual.json"))
+    if not (root / VISUAL_QA_PATH).is_file() and not visual_reports:
         findings.add(
             "missing_visual_qa",
             "P1",
-            "缺少图表视觉检查结果 figures/visual-qa.json",
+            "图表缺少任何视觉检查结果（figures/visual-qa.json 或 *.visual.json）",
             [VISUAL_QA_PATH.as_posix()],
         )
 
