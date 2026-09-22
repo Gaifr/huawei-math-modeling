@@ -64,6 +64,24 @@ def append_event(workspace: Path, event: str, details: dict[str, Any]) -> dict[s
         "details": details,
     }
     encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+    if not log_path.exists():
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{log_path.name}.", suffix=".tmp", dir=log_path.parent
+        )
+        try:
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary_name, log_path)
+        except BaseException:
+            try:
+                os.unlink(temporary_name)
+            except FileNotFoundError:
+                pass
+            raise
+        return record
+
     with log_path.open("ab") as handle:
         handle.write(encoded)
         handle.flush()

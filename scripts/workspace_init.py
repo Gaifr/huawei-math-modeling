@@ -47,6 +47,8 @@ RUNTIME_DIRECTORIES = (
     ".huawei-modeling",
 )
 
+PRIVATE_SOURCE_IGNORE_RULE = "/.huawei-modeling/local-sources.json\n"
+
 
 def _is_within(path: Path, parent: Path) -> bool:
     try:
@@ -108,6 +110,7 @@ def initialize_workspace(
 
     target.mkdir(parents=True)
     try:
+        (target / ".gitignore").write_text(PRIVATE_SOURCE_IGNORE_RULE, encoding="utf-8")
         for relative in RUNTIME_DIRECTORIES:
             (target / relative).mkdir(parents=True, exist_ok=True)
 

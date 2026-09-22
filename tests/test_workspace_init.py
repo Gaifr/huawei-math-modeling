@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
 from scripts.common import append_event, atomic_write_json, sha256_file
 from scripts.workspace_init import initialize_workspace
@@ -60,6 +61,23 @@ class WorkspaceInitTest(unittest.TestCase):
             self.assertNotIn(str(problem.resolve()), state_text)
             self.assertNotIn(str(problem.resolve()), event_text)
             self.assertEqual(local_sources["problem"]["source_path"], str(problem.resolve()))
+
+    def test_initialization_writes_exact_ignore_rule_for_private_sources(self):
+        """A missing or broad rule could expose private source paths to an external Git repo."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            problem = root / "problem.pdf"
+            template = root / "template.docx"
+            rules = root / "rules.pdf"
+            for source in (problem, template, rules):
+                source.write_bytes(b"official")
+            workspace = root / "contest"
+
+            initialize_workspace(workspace, problem, template, rules, "latex", "off")
+
+            ruleset = (workspace / ".gitignore").read_text(encoding="utf-8").splitlines()
+            self.assertIn("/.huawei-modeling/local-sources.json", ruleset)
+            self.assertNotIn("/.huawei-modeling/", ruleset)
 
     def test_rejects_workspace_inside_skill_repository(self):
         """Allowing a contest workspace in the skill repository would leak materials."""
@@ -129,6 +147,18 @@ class WorkspaceInitTest(unittest.TestCase):
             self.assertEqual([event["event"] for event in events], ["first", "second"])
             self.assertEqual(first["details"]["sequence"], 1)
             self.assertEqual(second["details"]["sequence"], 2)
+
+    def test_first_event_does_not_leave_final_log_when_atomic_replace_fails(self):
+        """A failed first event write must not leave a truncated events.jsonl behind."""
+        with TemporaryDirectory() as tmp:
+            workspace = Path(tmp)
+            log_path = workspace / ".huawei-modeling" / "events.jsonl"
+
+            with patch("scripts.common.os.replace", side_effect=OSError("disk failure")):
+                with self.assertRaises(OSError):
+                    append_event(workspace, "workspace_initialized", {})
+
+            self.assertFalse(log_path.exists())
 
 
 if __name__ == "__main__":
