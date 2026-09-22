@@ -1,0 +1,4 @@
+interface:
+  display_name: "Huawei Math Modeling"
+  short_description: "华为杯研究生数模全流程建模、计算、论文与审稿"
+  default_prompt: "使用 $huawei-math-modeling 启动或恢复华为杯研究生数学建模项目，并在关键节点等待我的确认。"

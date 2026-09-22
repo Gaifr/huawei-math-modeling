@@ -1,2 +1,27 @@
 .worktrees/
 .superpowers/
+.huawei-modeling/
+
+# Contest materials belong in a separate runtime workspace, never this repo.
+contest-workspace/
+**/contest-inputs/
+**/official-contest-materials/
+
+# Generated manuscript and submission outputs.
+**/generated-papers/
+**/submission-package/
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Runtime logs, caches, and Python bytecode.
+**/run-logs/
+**/.cache/
+**/__pycache__/
+*.py[cod]
