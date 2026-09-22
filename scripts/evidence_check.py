@@ -8,7 +8,6 @@ to real, current, traceable artifacts.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
@@ -16,9 +15,9 @@ import sys
 from typing import Any
 
 try:  # Support both package imports and direct CLI execution.
-    from .common import atomic_write_json, sha256_file
+    from .common import IssueLog, atomic_write_json, sha256_file, utc_timestamp
 except ImportError:  # pragma: no cover - direct execution path
-    from common import atomic_write_json, sha256_file
+    from common import IssueLog, atomic_write_json, sha256_file, utc_timestamp
 
 EVIDENCE_PATH = Path("results") / "result-evidence.json"
 CODE_MANIFEST_PATH = Path("code") / "code-manifest.json"
@@ -81,30 +80,6 @@ DECIMAL_PATTERNS = (
     re.compile(r"(\d+)\s*(?:decimal places?|decimals?)", re.IGNORECASE),
     re.compile(r"(\d+)\s*位小数"),
 )
-
-
-def _timestamp() -> str:
-    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-
-
-class Findings:
-    """Accumulates every finding instead of stopping at the first failure."""
-
-    def __init__(self) -> None:
-        self.items: list[dict[str, Any]] = []
-
-    def add(
-        self, code: str, severity: str, message: str, paths: list[Any] | None = None
-    ) -> None:
-        self.items.append(
-            {
-                "issue_id": f"{code}-{len(self.items) + 1:03d}",
-                "severity": severity,
-                "code": code,
-                "message": message,
-                "paths": [str(item) for item in (paths or [])],
-            }
-        )
 
 
 def _read_json(path: Path) -> tuple[Any, str | None]:
@@ -180,7 +155,7 @@ def _figure_index(root: Path) -> tuple[set[str], set[str]]:
 
 
 def _check_source_entry(
-    root: Path, entry: Any, label: str, stale: list[str], findings: Findings
+    root: Path, entry: Any, label: str, stale: list[str], findings: IssueLog
 ) -> None:
     if not isinstance(entry, dict):
         findings.add(
@@ -216,7 +191,7 @@ def _check_source_entry(
         )
 
 
-def _check_precision(result: dict[str, Any], label: str, findings: Findings) -> None:
+def _check_precision(result: dict[str, Any], label: str, findings: IssueLog) -> None:
     precision = result.get("precision")
     display = result.get("display_value")
     if not isinstance(precision, str) or not isinstance(display, str):
@@ -249,7 +224,7 @@ def _check_citations(
     label: str,
     figure_ids: set[str],
     figure_paths: set[str],
-    findings: Findings,
+    findings: IssueLog,
 ) -> None:
     citations = result.get("citations")
     if not isinstance(citations, list):
@@ -296,7 +271,7 @@ def _check_result(
     stale: list[str],
     figure_ids: set[str],
     figure_paths: set[str],
-    findings: Findings,
+    findings: IssueLog,
 ) -> None:
     if not isinstance(result, dict):
         findings.add(
@@ -365,7 +340,7 @@ def _check_result(
     _check_citations(root, result, label, figure_ids, figure_paths, findings)
 
 
-def _check_code_manifest(root: Path, manifest: Any, findings: Findings) -> None:
+def _check_code_manifest(root: Path, manifest: Any, findings: IssueLog) -> None:
     if not isinstance(manifest, dict):
         return
     files = manifest.get("files")
@@ -401,7 +376,7 @@ def _check_code_manifest(root: Path, manifest: Any, findings: Findings) -> None:
 def validate_evidence(workspace: Path) -> list[dict[str, Any]]:
     """Return every evidence-contract finding for *workspace*; empty means pass."""
     root = Path(workspace)
-    findings = Findings()
+    findings = IssueLog()
 
     evidence, error = _read_json(root / EVIDENCE_PATH)
     if error == "missing":
@@ -472,7 +447,7 @@ def main(argv: list[str] | None = None) -> int:
     report = {
         "schema_version": 1,
         "check": "evidence",
-        "generated_at": _timestamp(),
+        "generated_at": utc_timestamp(),
         "summary": summary,
         "issues": issues,
     }

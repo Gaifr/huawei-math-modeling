@@ -8,7 +8,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
-from typing import Any
+from typing import Any, Iterable
 
 
 def sha256_file(path: Path) -> str:
@@ -87,3 +87,39 @@ def append_event(workspace: Path, event: str, details: dict[str, Any]) -> dict[s
         handle.flush()
         os.fsync(handle.fileno())
     return record
+
+
+def utc_timestamp() -> str:
+    """Return the current UTC time as an ISO-8601 string with a Z suffix."""
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+class IssueLog:
+    """Collects every finding instead of stopping at the first failure."""
+
+    def __init__(self) -> None:
+        self.items: list[dict[str, Any]] = []
+
+    def add(
+        self, code: str, severity: str, message: str, paths: Iterable[Any] | None = None
+    ) -> None:
+        self.items.append(
+            {
+                "issue_id": f"{code}-{len(self.items) + 1:03d}",
+                "severity": severity,
+                "code": code,
+                "message": message,
+                "paths": [str(item) for item in (paths or [])],
+            }
+        )
+
+    def summary(self) -> dict[str, int]:
+        return {
+            level: sum(1 for issue in self.items if issue["severity"] == level)
+            for level in ("P0", "P1", "P2", "P3")
+        }
+
+    def blocking(self) -> bool:
+        """True when an unresolved P0 or P1 finding exists."""
+        summary = self.summary()
+        return bool(summary["P0"] or summary["P1"])
