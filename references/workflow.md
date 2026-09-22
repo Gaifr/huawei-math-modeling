@@ -10,6 +10,8 @@
 活动阶段，并为每个声明的产物计算 SHA-256。`DISCOVERY`、`FORMULATION`、
 `COMPUTATION` 和 `REVIEW` 完成后还必须依次执行 `request-approval` 和
 `approve`；缺少确认、确认已失效或确认绑定的文件发生变化时，下一阶段不能开始。
+每个确认点绑定截至该阶段的全部有效、非过期登记产物；因此 `REVIEW`
+后的终稿确认同时绑定当前 `manuscript/paper.pdf` 及其上游证据。
 
 典型命令如下：
 
@@ -49,6 +51,12 @@ python scripts/workflow.py --workspace <workspace> rework FORMULATION --reason "
 删除，便于比较与追溯；但过期文件不能作为当前结论、论文或交付依据。阶段重新完成
 且同一路径产物重新登记后，该路径才从过期清单移除。每次返工都会写入原因、受影响
 产物和失效审批事件。
+
+返工落盘采用两阶段事件：先追加含 `operation_id` 的
+`stage_rework_requested`，再写入审批和状态，最后追加
+`stage_rework_completed`。如果意图事件无法写入，返工不会改变状态；如果只有
+意图而没有同 `operation_id` 的完成事件，说明操作曾中断，应核对当前状态后
+使用相同目标阶段和原因重试。
 
 ## 为什么手工改文件不等于返工
 

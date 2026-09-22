@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 import sys
 from typing import Any, Iterable
+from uuid import uuid4
 
 try:  # Support both package imports and direct CLI execution.
     from .common import append_event, atomic_write_json, sha256_file
@@ -113,6 +114,30 @@ class Workflow:
             hashes[relative] = current_hash
         return hashes
 
+    def _checkpoint_artifact_hashes(self, stage: str) -> dict[str, str]:
+        checkpoint_index = self._require_stage(stage)
+        stale = set(self._state.get("stale_artifacts", []))
+        hashes: dict[str, str] = {}
+        artifacts = self._state.get("artifacts", {})
+        if not isinstance(artifacts, dict):
+            raise TransitionError("Workflow artifact registry is invalid")
+        for relative, record in artifacts.items():
+            if not isinstance(record, dict) or relative in stale:
+                continue
+            artifact_stage = record.get("stage")
+            if artifact_stage not in STAGES or STAGES.index(artifact_stage) > checkpoint_index:
+                continue
+            path = self._artifact_path(relative)
+            if not path.is_file():
+                raise TransitionError(f"Registered artifact is missing: {relative}")
+            current_hash = sha256_file(path)
+            if current_hash != record.get("sha256"):
+                raise TransitionError(
+                    f"Registered artifact changed; use rework before continuing: {relative}"
+                )
+            hashes[relative] = current_hash
+        return hashes
+
     def _require_valid_approval(self, stage: str) -> None:
         approval = self._approvals.get(stage)
         if not isinstance(approval, dict):
@@ -121,7 +146,7 @@ class Workflow:
             raise TransitionError(f"Approval checkpoint does not match {stage}")
         if approval.get("decision") != "approve":
             raise TransitionError(f"Human approval for {stage} is not active")
-        current_hashes = self._stage_artifact_hashes(stage)
+        current_hashes = self._checkpoint_artifact_hashes(stage)
         if approval.get("artifact_hashes") != current_hashes:
             raise TransitionError(f"Artifacts changed after approval for {stage}")
 
@@ -193,7 +218,7 @@ class Workflow:
             raise TransitionError(f"Only the active stage can request approval: {stage}")
         if self._state["stages"][stage].get("status") != "complete":
             raise TransitionError(f"Stage must be complete before approval: {stage}")
-        artifact_hashes = self._stage_artifact_hashes(stage)
+        artifact_hashes = self._checkpoint_artifact_hashes(stage)
         self._state["stages"][stage]["status"] = "awaiting_approval"
         atomic_write_json(self._state_path, self._state)
         append_event(
@@ -224,7 +249,7 @@ class Workflow:
             "decision": "approve",
             "note": cleaned_note,
             "timestamp": _timestamp(),
-            "artifact_hashes": self._stage_artifact_hashes(stage),
+            "artifact_hashes": self._checkpoint_artifact_hashes(stage),
         }
         self._approvals[stage] = approval
         self._state["stages"][stage]["status"] = "complete"
@@ -247,26 +272,30 @@ class Workflow:
         if not cleaned_reason:
             raise TransitionError("Rework reason must not be empty")
 
+        candidate_state = deepcopy(self._state)
+        candidate_approvals = deepcopy(self._approvals)
         downstream_artifacts = [
             relative
-            for relative, record in self._state.get("artifacts", {}).items()
+            for relative, record in candidate_state.get("artifacts", {}).items()
             if isinstance(record, dict)
             and STAGES.index(record.get("stage")) > target_index
         ]
-        self._state["stale_artifacts"] = list(
-            dict.fromkeys([*self._state.get("stale_artifacts", []), *downstream_artifacts])
+        candidate_state["stale_artifacts"] = list(
+            dict.fromkeys(
+                [*candidate_state.get("stale_artifacts", []), *downstream_artifacts]
+            )
         )
-        self._state["active_stage"] = stage
-        self._state["stages"][stage]["status"] = "active"
+        candidate_state["active_stage"] = stage
+        candidate_state["stages"][stage]["status"] = "active"
         for later_stage in STAGES[target_index + 1 :]:
-            self._state["stages"][later_stage]["status"] = "pending"
+            candidate_state["stages"][later_stage]["status"] = "pending"
 
         invalidated: list[str] = []
         invalidated_at = _timestamp()
         for checkpoint_stage in CHECKPOINTS:
             if STAGES.index(checkpoint_stage) < target_index:
                 continue
-            approval = self._approvals.get(checkpoint_stage)
+            approval = candidate_approvals.get(checkpoint_stage)
             if not isinstance(approval, dict) or approval.get("decision") != "approve":
                 continue
             approval["decision"] = "invalidated"
@@ -274,17 +303,27 @@ class Workflow:
             approval["invalidation_reason"] = cleaned_reason
             invalidated.append(checkpoint_stage)
 
-        atomic_write_json(self._approvals_path, self._approvals)
-        atomic_write_json(self._state_path, self._state)
+        operation_id = uuid4().hex
+        event_details = {
+            "operation_id": operation_id,
+            "stage": stage,
+            "reason": cleaned_reason,
+            "stale_artifacts": downstream_artifacts,
+            "invalidated_approvals": invalidated,
+        }
         append_event(
             self.workspace,
             "stage_rework_requested",
-            {
-                "stage": stage,
-                "reason": cleaned_reason,
-                "stale_artifacts": downstream_artifacts,
-                "invalidated_approvals": invalidated,
-            },
+            event_details,
+        )
+        atomic_write_json(self._approvals_path, candidate_approvals)
+        atomic_write_json(self._state_path, candidate_state)
+        self._approvals = candidate_approvals
+        self._state = candidate_state
+        append_event(
+            self.workspace,
+            "stage_rework_completed",
+            {"operation_id": operation_id, "stage": stage},
         )
         return self.status()
 

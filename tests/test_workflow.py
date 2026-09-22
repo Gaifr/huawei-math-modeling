@@ -2,7 +2,9 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
 
+from scripts.common import append_event as real_append_event
 from scripts.workflow import CHECKPOINTS, STAGES, TransitionError, Workflow
 from tests.helpers import make_workflow_fixture
 
@@ -87,6 +89,28 @@ class WorkflowTest(unittest.TestCase):
             with self.assertRaises(TransitionError):
                 workflow.begin("MANUSCRIPT")
 
+    def test_final_draft_approval_is_bound_to_manuscript_pdf(self):
+        """Leaving the approved paper outside final-draft hashes would make this fail."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = make_workflow_fixture(root, through="REVIEW")
+            (root / "manuscript" / "paper.pdf").write_bytes(b"edited after approval")
+
+            with self.assertRaises(TransitionError):
+                workflow.begin("DELIVERY")
+
+    def test_final_draft_approval_is_bound_to_earlier_evidence(self):
+        """Binding only REVIEW files would let changed evidence pass silently."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = make_workflow_fixture(root, through="REVIEW")
+            (root / "figures" / "figure-manifest.json").write_text(
+                '{"schema_version": 1, "changed": true}', encoding="utf-8"
+            )
+
+            with self.assertRaises(TransitionError):
+                workflow.begin("DELIVERY")
+
     def test_completion_hashes_artifacts_and_load_recovers_state(self):
         """Omitting hashes or persisting only in memory would make this fail."""
         with TemporaryDirectory() as tmp:
@@ -123,8 +147,60 @@ class WorkflowTest(unittest.TestCase):
                     encoding="utf-8"
                 ).splitlines()
             ]
+            self.assertEqual(events[-2]["event"], "stage_rework_requested")
+            self.assertEqual(events[-1]["event"], "stage_rework_completed")
+            self.assertEqual(
+                events[-2]["details"]["operation_id"],
+                events[-1]["details"]["operation_id"],
+            )
+            self.assertIn("FORMULATION", events[-2]["details"]["invalidated_approvals"])
+
+    def test_rework_does_not_mutate_when_intent_event_cannot_be_written(self):
+        """Writing rollback state before a durable intent would make this fail."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = make_workflow_fixture(root, through="MANUSCRIPT")
+            before_state = workflow.status()
+            approvals_path = root / ".huawei-modeling" / "approvals.json"
+            before_approvals = json.loads(approvals_path.read_text(encoding="utf-8"))
+
+            with patch("scripts.workflow.append_event", side_effect=OSError("disk failure")):
+                with self.assertRaises(OSError):
+                    workflow.rework("FORMULATION", "model changed")
+
+            self.assertEqual(workflow.status(), before_state)
+            self.assertEqual(Workflow.load(root).status(), before_state)
+            self.assertEqual(
+                json.loads(approvals_path.read_text(encoding="utf-8")), before_approvals
+            )
+
+    def test_rework_completion_event_failure_leaves_durable_intent(self):
+        """Losing all trace after committed rollback state would make this fail."""
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            workflow = make_workflow_fixture(root, through="MANUSCRIPT")
+            calls = 0
+
+            def fail_second_event(*args, **kwargs):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("disk failure")
+                return real_append_event(*args, **kwargs)
+
+            with patch("scripts.workflow.append_event", side_effect=fail_second_event):
+                with self.assertRaises(OSError):
+                    workflow.rework("FORMULATION", "model changed")
+
+            self.assertEqual(Workflow.load(root).status()["active_stage"], "FORMULATION")
+            events = [
+                json.loads(line)
+                for line in (root / ".huawei-modeling" / "events.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
             self.assertEqual(events[-1]["event"], "stage_rework_requested")
-            self.assertIn("FORMULATION", events[-1]["details"]["invalidated_approvals"])
+            self.assertTrue(events[-1]["details"]["operation_id"])
 
 
 if __name__ == "__main__":
