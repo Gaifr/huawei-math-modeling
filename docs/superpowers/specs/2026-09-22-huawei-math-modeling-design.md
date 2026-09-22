@@ -155,7 +155,9 @@ contest-workspace/
 └── .huawei-modeling/
     ├── state.json
     ├── events.jsonl
-    └── approvals.json
+    ├── approvals.json
+    ├── rule-snapshot.json
+    └── gates/
 ```
 
 ## 7. 状态与证据合同
@@ -165,6 +167,9 @@ contest-workspace/
 `events.jsonl` 使用只追加事件记录阶段开始、完成、返工、脚本执行、文件变化和门禁结果。
 
 `approvals.json` 保存四个确认点的选择、说明、时间和绑定哈希。
+`rule-snapshot.json` 保存当届官方规则的机器可读条款（页数、目录深度、匿名要求、
+命名规则等）；条款缺失时对应检查记为未验证，快照本身缺失或与官方规则哈希不一致时
+禁止声明格式合规。
 
 `result-evidence.json` 为每个关键结论登记：
 
@@ -188,7 +193,7 @@ contest-workspace/
 | EVIDENCE | 图表来源可追溯，字号、裁切、重叠和路径通过 | 图表是否支持实际论点 |
 | MANUSCRIPT | 数值可追溯，章节、引用、附录完整，可编译或导出 | 论文是否清楚且有说服力 |
 | REVIEW | P0 为零，问题去重，报告与论文哈希匹配 | P1 是否修复或明确接受 |
-| DELIVERY | PDF、匿名、目录、页数、附件和清单通过 | 用户最终批准提交 |
+| DELIVERY | 当届规则快照存在且页数、目录深度、匿名、文件名、附件和清单通过 | 用户最终批准提交 |
 
 问题严重级别：
 
@@ -250,7 +255,8 @@ huawei-math-modeling/
 ├── assets/schemas/
 │   ├── workflow-state.schema.json
 │   ├── result-evidence.schema.json
-│   └── review-report.schema.json
+│   ├── review-report.schema.json
+│   └── rule-snapshot.schema.json
 ├── docs/superpowers/specs/
 ├── THIRD_PARTY_NOTICES.md
 └── LICENSE
