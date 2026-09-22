@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openai.com/schemas/huawei-math-modeling/review-report.schema.json",
+  "title": "Huawei Cup review report",
+  "type": "object",
+  "required": ["schema_version", "paper_sha256", "issues"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "paper_sha256": { "$ref": "#/$defs/sha256" },
+    "issues": { "type": "array", "items": { "$ref": "#/$defs/issue" } }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "stage": {
+      "enum": [
+        "INTAKE",
+        "DISCOVERY",
+        "FORMULATION",
+        "COMPUTATION",
+        "EVIDENCE",
+        "MANUSCRIPT",
+        "REVIEW",
+        "DELIVERY"
+      ]
+    },
+    "issue": {
+      "type": "object",
+      "required": ["root_stage", "root_key", "severity", "locations", "message"],
+      "properties": {
+        "root_stage": { "$ref": "#/$defs/stage" },
+        "root_key": { "type": "string", "minLength": 1 },
+        "severity": { "enum": ["P0", "P1", "P2", "P3"] },
+        "locations": { "type": "array", "items": { "type": "string" } },
+        "message": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "type": "string" } },
+        "affected_questions": { "type": "array", "items": { "type": "string" } },
+        "status": { "enum": ["open", "accepted", "resolved"] }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "paper_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "issues": [
+        {
+          "root_stage": "COMPUTATION",
+          "root_key": "Q2.metric_missing",
+          "severity": "P1",
+          "locations": ["abstract", "results"],
+          "message": "关键指标无法复现",
+          "status": "open"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openai.com/schemas/huawei-math-modeling/workflow-state.schema.json",
+  "title": "Huawei Cup modeling workflow state",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "active_stage",
+    "route",
+    "ai_disclosure",
+    "stages",
+    "inputs",
+    "artifacts",
+    "stale_artifacts",
+    "blocking_issues"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "active_stage": { "$ref": "#/$defs/stage" },
+    "route": { "enum": ["latex", "docx"] },
+    "ai_disclosure": { "enum": ["required", "off"] },
+    "stages": {
+      "type": "object",
+      "required": [
+        "INTAKE",
+        "DISCOVERY",
+        "FORMULATION",
+        "COMPUTATION",
+        "EVIDENCE",
+        "MANUSCRIPT",
+        "REVIEW",
+        "DELIVERY"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "INTAKE": { "$ref": "#/$defs/stage_state" },
+        "DISCOVERY": { "$ref": "#/$defs/stage_state" },
+        "FORMULATION": { "$ref": "#/$defs/stage_state" },
+        "COMPUTATION": { "$ref": "#/$defs/stage_state" },
+        "EVIDENCE": { "$ref": "#/$defs/stage_state" },
+        "MANUSCRIPT": { "$ref": "#/$defs/stage_state" },
+        "REVIEW": { "$ref": "#/$defs/stage_state" },
+        "DELIVERY": { "$ref": "#/$defs/stage_state" }
+      }
+    },
+    "inputs": {
+      "type": "object",
+      "required": ["problem", "official_template", "official_rules"],
+      "additionalProperties": false,
+      "properties": {
+        "problem": { "$ref": "#/$defs/input" },
+        "official_template": { "$ref": "#/$defs/input" },
+        "official_rules": { "$ref": "#/$defs/input" }
+      }
+    },
+    "artifacts": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/artifact" }
+    },
+    "stale_artifacts": { "type": "array", "items": { "type": "string" } },
+    "blocking_issues": {
+      "type": "array",
+      "items": { "oneOf": [{ "type": "string" }, { "type": "object" }] }
+    }
+  },
+  "$defs": {
+    "stage": {
+      "enum": [
+        "INTAKE",
+        "DISCOVERY",
+        "FORMULATION",
+        "COMPUTATION",
+        "EVIDENCE",
+        "MANUSCRIPT",
+        "REVIEW",
+        "DELIVERY"
+      ]
+    },
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "stage_state": {
+      "type": "object",
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "active",
+            "awaiting_approval",
+            "complete",
+            "rework",
+            "required",
+            "blocked"
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "input": {
+      "type": "object",
+      "required": ["filename", "workspace_path", "sha256", "size_bytes"],
+      "properties": {
+        "filename": { "type": "string", "minLength": 1 },
+        "workspace_path": { "type": "string", "pattern": "^inputs/" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "size_bytes": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["sha256", "stage"],
+      "properties": {
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "stage": { "$ref": "#/$defs/stage" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "active_stage": "INTAKE",
+      "route": "latex",
+      "ai_disclosure": "off",
+      "stages": {
+        "INTAKE": { "status": "active" },
+        "DISCOVERY": { "status": "pending" },
+        "FORMULATION": { "status": "pending" },
+        "COMPUTATION": { "status": "pending" },
+        "EVIDENCE": { "status": "pending" },
+        "MANUSCRIPT": { "status": "pending" },
+        "REVIEW": { "status": "pending" },
+        "DELIVERY": { "status": "pending" }
+      },
+      "inputs": {
+        "problem": {
+          "filename": "problem.pdf",
+          "workspace_path": "inputs/problem/problem.pdf",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size_bytes": 0
+        },
+        "official_template": {
+          "filename": "template.docx",
+          "workspace_path": "inputs/official-template/template.docx",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size_bytes": 0
+        },
+        "official_rules": {
+          "filename": "rules.pdf",
+          "workspace_path": "inputs/official-rules/rules.pdf",
+          "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+          "size_bytes": 0
+        }
+      },
+      "artifacts": {},
+      "stale_artifacts": [],
+      "blocking_issues": []
+    }
+  ]
+}

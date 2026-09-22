@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openai.com/schemas/huawei-math-modeling/result-evidence.schema.json",
+  "title": "Huawei Cup result evidence",
+  "type": "object",
+  "required": ["schema_version", "results"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "results": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/result" }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "source_file": {
+      "type": "object",
+      "required": ["path", "sha256"],
+      "properties": {
+        "path": { "type": "string", "minLength": 1 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "result": {
+      "type": "object",
+      "required": [
+        "id",
+        "model_identity",
+        "mechanism",
+        "solver_algorithm",
+        "value",
+        "source_files"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "problem_ids": { "type": "array", "items": { "type": "string" } },
+        "model_identity": { "type": "string", "minLength": 1 },
+        "mechanism": { "type": "string", "minLength": 1 },
+        "solver_algorithm": { "type": "string", "minLength": 1 },
+        "value": {},
+        "display_value": {},
+        "precision": { "type": "string" },
+        "input_files": { "type": "array", "items": { "$ref": "#/$defs/source_file" } },
+        "source_files": { "type": "array", "items": { "$ref": "#/$defs/source_file" } },
+        "run_command": { "type": "string" },
+        "environment": { "type": "object" },
+        "parameters": { "type": "object" },
+        "random_seed": { "oneOf": [{ "type": "integer" }, { "type": "string" }] },
+        "validation": { "type": "array", "items": { "type": "object" } },
+        "citations": { "type": "array", "items": { "type": "object" } }
+      },
+      "additionalProperties": true
+    }
+  },
+  "examples": [
+    {
+      "schema_version": 1,
+      "results": [
+        {
+          "id": "Q1.objective",
+          "problem_ids": ["Q1"],
+          "model_identity": "linear programming",
+          "mechanism": "capacity constraints",
+          "solver_algorithm": "HiGHS",
+          "value": 12.5,
+          "display_value": "12.50",
+          "precision": "2 decimal places",
+          "source_files": [
+            {
+              "path": "code/q1.py",
+              "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+            }
+          ],
+          "run_command": "python code/q1.py",
+          "environment": { "python": "3.10" }
+        }
+      ]
+    }
+  ]
+}
