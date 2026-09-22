@@ -19,6 +19,10 @@
 - `.huawei-modeling/local-sources.json`：仅本地保存的原始绝对路径，禁止写入
   `state.json`、`events.jsonl` 或任何公开报告。
 - `.huawei-modeling/events.jsonl` 的首条 `workspace_initialized` 事件。
+- `.huawei-modeling/rule-snapshot.json`：从当届官方规则中提取的机器可读条款
+  （`max_pages`、`toc_max_depth`、`anonymity_required`、`filename_pattern` 等），
+  结构见 `assets/schemas/rule-snapshot.schema.json`。无法确定的条款一律写 `null`，
+  对应检查会记为未验证，而不是误判为通过。
 
 初始化命令：
 

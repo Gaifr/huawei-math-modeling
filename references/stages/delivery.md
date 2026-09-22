@@ -19,9 +19,14 @@
 ## Required checks
 
 1. 最终 PDF 存在且大小非零；记录的导出或编译命令可复现。
-2. 页数与当届规则快照一致；无当届规则快照时标记为未验证而非通过。
+2. 必须存在 `.huawei-modeling/rule-snapshot.json`：快照缺失或与登记的官方规则
+   哈希不一致时，DELIVERY 直接失败。页数超过 `max_pages`、目录深度超过
+   `toc_max_depth`、命中身份信息、文件名不符合 `filename_pattern` 同样失败；
+   快照中写为 `null` 的条款记为未验证而非通过。
 3. 目录层级不超过当届允许深度。
-4. 匿名性扫描：作者、单位、指导教师、致谢、页眉页脚中无身份信息。
+4. 匿名性扫描：`gate_check.py` 扫描 `manuscript/source/` 中的邮箱、手机号以及
+   「作者/单位/学校/学院/指导教师/学号/队号/队员」等标注，
+   `anonymity_allowlist` 中的正则可豁免；人工仍需确认扫描未覆盖的表述和 PDF 页眉页脚。
 5. AI 使用说明与工作区 `ai_disclosure` 登记一致。
 6. 图表与公式经过视觉检查（`figures/visual-qa.json`、`pdf-layout-report.json`）。
 7. 附录与支撑材料清单完整，且与 `submission-manifest.json` 一致。

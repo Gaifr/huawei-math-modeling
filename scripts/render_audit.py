@@ -109,20 +109,65 @@ def _render_pages(paper: Path, unavailable: list[str]) -> dict[str, Any] | None:
         return {"tool": command, "version": version, "rendered_pages": len(pages)}
 
 
+def _flag_overlaps(page_number: int, spans: list[dict[str, Any]], findings: IssueLog) -> None:
+    """Report at most one suspicious text intersection per page."""
+    candidates: list[tuple[str, Any, float]] = []
+    for span in spans:
+        text = str(span.get("text", "")).strip()
+        bbox = span.get("bbox")
+        if not text or not bbox:
+            continue
+        area = max(0.0, bbox[2] - bbox[0]) * max(0.0, bbox[3] - bbox[1])
+        if area < 40:
+            continue
+        candidates.append((text, bbox, area))
+    if len(candidates) > 300:
+        candidates = candidates[:300]
+    for index, (text_a, box_a, area_a) in enumerate(candidates):
+        for text_b, box_b, area_b in candidates[index + 1 :]:
+            if text_a == text_b:
+                continue
+            width = min(box_a[2], box_b[2]) - max(box_a[0], box_b[0])
+            height = min(box_a[3], box_b[3]) - max(box_a[1], box_b[1])
+            if width <= 0 or height <= 0:
+                continue
+            if (width * height) / min(area_a, area_b) >= 0.6:
+                findings.add(
+                    "text_overlap",
+                    "P1",
+                    (
+                        f"第 {page_number} 页存在可疑文本重叠："
+                        f"「{text_a[:12]}」与「{text_b[:12]}」"
+                    ),
+                    [PAPER_PATH.as_posix()],
+                )
+                return
+
+
 def _inspect_layout(
-    paper: Path, findings: IssueLog, unavailable: list[str]
+    paper: Path, findings: IssueLog, unavailable: list[str], strict: bool = False
 ) -> dict[str, Any]:
     """Record page geometry and typography findings, or mark them unverified."""
     result: dict[str, Any] = {
         "page_count": 0,
         "page_sizes": [],
         "checked_pages": [],
+        "uninspected_pages": [],
+        "toc_max_depth": None,
         "pdf_library": "none",
     }
     if importlib.util.find_spec("fitz") is None:
         unavailable.append("pdf_layout_checks: PyMuPDF (fitz) is not importable")
-        result["page_count"] = _fallback_page_count(paper)
-        result["checked_pages"] = list(range(1, result["page_count"] + 1))
+        page_count = _fallback_page_count(paper)
+        result["page_count"] = page_count
+        result["uninspected_pages"] = list(range(1, page_count + 1))
+        if strict and page_count:
+            findings.add(
+                "uninspected_pages",
+                "P1",
+                f"strict 模式要求逐页版面检查，但 {page_count} 页未被检查（缺少 PyMuPDF）",
+                [PAPER_PATH.as_posix()],
+            )
         return result
 
     import fitz  # type: ignore[import-not-found]
@@ -139,6 +184,12 @@ def _inspect_layout(
 
     with document:
         result["page_count"] = document.page_count
+        toc_levels = [
+            entry[0]
+            for entry in document.get_toc(simple=True)
+            if entry and isinstance(entry[0], int)
+        ]
+        result["toc_max_depth"] = max(toc_levels) if toc_levels else 0
         for index in range(document.page_count):
             page = document[index]
             number = index + 1
@@ -162,6 +213,7 @@ def _inspect_layout(
                     f"第 {number} 页没有任何文本内容",
                     [PAPER_PATH.as_posix()],
                 )
+            _flag_overlaps(number, spans, findings)
             for span in spans:
                 text = str(span.get("text", "")).strip()
                 if not text:
@@ -248,6 +300,8 @@ def _build_report(
         "paper_sha256": paper_hash,
         "page_count": layout.get("page_count", 0),
         "checked_pages": layout.get("checked_pages", []),
+        "uninspected_pages": layout.get("uninspected_pages", []),
+        "toc_max_depth": layout.get("toc_max_depth"),
         "page_sizes": layout.get("page_sizes", []),
         "renderer": renderer or {"tool": "none", "version": "none", "rendered_pages": 0},
         "pdf_library": layout.get("pdf_library", "none"),
@@ -281,7 +335,7 @@ def audit_rendered_output(workspace: Path, strict: bool = False) -> dict[str, An
 
     paper_hash = sha256_file(paper)
     renderer = _render_pages(paper, unavailable)
-    layout = _inspect_layout(paper, findings, unavailable)
+    layout = _inspect_layout(paper, findings, unavailable, strict=strict)
     visual = _visual_qa(root, findings)
 
     status = "pass"

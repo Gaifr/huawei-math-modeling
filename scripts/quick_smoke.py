@@ -175,6 +175,22 @@ def run_smoke() -> dict[str, Any]:
 
         # INTAKE
         workflow.complete("INTAKE", ["inputs/problem/problem.pdf"])
+        rules_input = workflow.status()["inputs"]["official_rules"]
+        atomic_write_json(
+            workspace / ".huawei-modeling" / "rule-snapshot.json",
+            {
+                "schema_version": 1,
+                "competition": "NPGMCM",
+                "year": 2026,
+                "source_filename": rules_input["filename"],
+                "source_sha256": rules_input["sha256"],
+                "max_pages": 25,
+                "toc_max_depth": 3,
+                "anonymity_required": True,
+                "anonymity_allowlist": [],
+                "filename_pattern": None,
+            },
+        )
         gates["INTAKE"] = check_gate(workspace, "INTAKE")["passed"]
 
         # DISCOVERY

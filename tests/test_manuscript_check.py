@@ -9,6 +9,9 @@ from scripts.common import atomic_write_json, sha256_file
 from scripts.manuscript_check import check_manuscript
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def codes_for(workspace: Path, route: str = "docx") -> set[str]:
     return {item["code"] for item in check_manuscript(workspace, route)}
 
@@ -169,6 +172,39 @@ class ManuscriptCheckTest(unittest.TestCase):
             self.assertTrue(
                 any(i["severity"] == "P0" for i in issues if i["code"] == "missing_manuscript_source")
             )
+
+    def test_both_routes_share_the_same_evidence_layer(self):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            make_workspace(
+                root,
+                "最优目标值为 123.46。",
+                route="latex",
+                results=[
+                    {
+                        "id": "Q1.objective",
+                        "model_identity": "linear programming",
+                        "mechanism": "capacity constraints",
+                        "solver_algorithm": "HiGHS",
+                        "value": 123.456789,
+                        "display_value": "123.46",
+                    }
+                ],
+            )
+            latex_codes = codes_for(root, "latex")
+            docx_codes = codes_for(root, "docx")
+            self.assertNotIn("untraced_numeric_claim", latex_codes)
+            self.assertNotIn("untraced_numeric_claim", docx_codes)
+            self.assertNotIn("route_mismatch", latex_codes)
+            self.assertIn("route_mismatch", docx_codes)
+
+    def test_both_route_protocols_are_present(self):
+        for name in ("latex", "docx"):
+            text = (ROOT / "references" / "formats" / f"{name}.md").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("## Required steps", text)
+            self.assertIn("## Stop conditions", text)
 
 
 if __name__ == "__main__":
