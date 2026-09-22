@@ -99,6 +99,7 @@ class RenderAuditTest(unittest.TestCase):
             )
             self.assertIn("figure_hashes", report)
             self.assertIn("unavailable", report)
+            self.assertIn("toc_max_depth", report)
 
     def test_strict_mode_rejects_missing_pdf(self):
         with TemporaryDirectory() as tmp:

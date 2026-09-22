@@ -153,6 +153,7 @@ def _inspect_layout(
         "page_sizes": [],
         "checked_pages": [],
         "uninspected_pages": [],
+        "toc_max_depth": None,
         "pdf_library": "none",
     }
     if importlib.util.find_spec("fitz") is None:
@@ -183,6 +184,12 @@ def _inspect_layout(
 
     with document:
         result["page_count"] = document.page_count
+        toc_levels = [
+            entry[0]
+            for entry in document.get_toc(simple=True)
+            if entry and isinstance(entry[0], int)
+        ]
+        result["toc_max_depth"] = max(toc_levels) if toc_levels else 0
         for index in range(document.page_count):
             page = document[index]
             number = index + 1
@@ -294,6 +301,7 @@ def _build_report(
         "page_count": layout.get("page_count", 0),
         "checked_pages": layout.get("checked_pages", []),
         "uninspected_pages": layout.get("uninspected_pages", []),
+        "toc_max_depth": layout.get("toc_max_depth"),
         "page_sizes": layout.get("page_sizes", []),
         "renderer": renderer or {"tool": "none", "version": "none", "rendered_pages": 0},
         "pdf_library": layout.get("pdf_library", "none"),
