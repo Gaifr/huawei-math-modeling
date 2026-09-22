@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://openai.com/schemas/huawei-math-modeling/rule-snapshot.schema.json",
+  "title": "Huawei Cup official rule snapshot",
+  "description": "Machine-readable extract of the current-year official rules. A null rule means the rule was not extracted; the matching gate check stays unverified instead of passing.",
+  "type": "object",
+  "required": ["schema_version", "competition", "source_filename", "source_sha256"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "competition": { "type": "string", "minLength": 1 },
+    "year": { "type": ["integer", "string"] },
+    "source_filename": { "type": "string", "minLength": 1 },
+    "source_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+    "max_pages": { "type": ["integer", "null"], "minimum": 1 },
+    "toc_max_depth": { "type": ["integer", "null"], "minimum": 1 },
+    "anonymity_required": { "type": ["boolean", "null"] },
+    "anonymity_allowlist": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Regular expressions that are legitimate in the manuscript even when anonymity is required."
+    },
+    "filename_pattern": { "type": ["string", "null"] },
+    "submission_file_limit": { "type": ["integer", "null"], "minimum": 1 },
+    "notes": { "type": "string" }
+  },
+  "additionalProperties": true,
+  "examples": [
+    {
+      "schema_version": 1,
+      "competition": "NPGMCM",
+      "year": 2026,
+      "source_filename": "附件2：论文格式规范.docx",
+      "source_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "max_pages": 25,
+      "toc_max_depth": 3,
+      "anonymity_required": true,
+      "anonymity_allowlist": [],
+      "filename_pattern": null
+    }
+  ]
+}

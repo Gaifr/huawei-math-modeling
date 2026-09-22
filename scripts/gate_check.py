@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
+import re
 import sys
 from typing import Any
 
@@ -29,6 +30,7 @@ APPROVALS_PATH = Path(".huawei-modeling") / "approvals.json"
 REVIEW_LEDGER_PATH = Path("review") / "issue-ledger.json"
 MANUSCRIPT_CHECK_PATH = Path("manuscript") / "manuscript-check.json"
 SUBMISSION_MANIFEST_PATH = Path("delivery") / "submission-manifest.json"
+RULE_SNAPSHOT_PATH = Path(".huawei-modeling") / "rule-snapshot.json"
 VISUAL_QA_PATH = Path("figures") / "visual-qa.json"
 
 DISCOVERY_ARTIFACTS = (
@@ -274,10 +276,188 @@ def _require_render_audit(root: Path, findings: IssueLog, hashes: dict[str, str]
         )
 
 
+ANONYMITY_PATTERNS = (
+    ("email", re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")),
+    ("mobile", re.compile(r"(?<!\d)1[3-9]\d{9}(?!\d)")),
+    (
+        "labelled_identity",
+        re.compile(
+            r"(作者|单位|学校|学院|指导教师|指导老师|学号|队号|队员)\s*[:：]\s*\S+"
+        ),
+    ),
+)
+
+
+def _check_rule_snapshot(
+    root: Path, state: dict[str, Any], findings: IssueLog, unverified: list[str]
+) -> dict[str, Any] | None:
+    """Load the current-year rule snapshot; missing or stale blocks compliance claims."""
+    payload = _read_json(root / RULE_SNAPSHOT_PATH)
+    if not isinstance(payload, dict):
+        findings.add(
+            "missing_rule_snapshot",
+            "P0",
+            (
+                "缺少当届官方规则快照 .huawei-modeling/rule-snapshot.json，"
+                "无法声明论文格式合规"
+            ),
+            [RULE_SNAPSHOT_PATH.as_posix()],
+        )
+        return None
+    recorded = payload.get("source_sha256")
+    if not isinstance(recorded, str) or not re.fullmatch(r"[a-f0-9]{64}", recorded):
+        findings.add(
+            "invalid_rule_snapshot",
+            "P0",
+            "规则快照缺少合法的 source_sha256",
+            [RULE_SNAPSHOT_PATH.as_posix()],
+        )
+        return payload
+    inputs = state.get("inputs")
+    rules = inputs.get("official_rules") if isinstance(inputs, dict) else None
+    declared = rules.get("sha256") if isinstance(rules, dict) else None
+    if isinstance(declared, str) and declared != recorded:
+        findings.add(
+            "rule_snapshot_stale",
+            "P0",
+            "规则快照与工作区登记的官方规则文件不一致，必须先更新快照",
+            [RULE_SNAPSHOT_PATH.as_posix()],
+        )
+    return payload
+
+
+def _check_layout_limits(
+    root: Path, snapshot: dict[str, Any], findings: IssueLog, unverified: list[str]
+) -> None:
+    report = load_report(root)
+    if not isinstance(report, dict):
+        unverified.append("page_limit: 缺少版面审计报告，无法比对页数与目录深度")
+        return
+    max_pages = snapshot.get("max_pages")
+    page_count = report.get("page_count")
+    if isinstance(max_pages, int) and max_pages > 0:
+        if isinstance(page_count, int) and page_count > max_pages:
+            findings.add(
+                "page_limit_exceeded",
+                "P0",
+                f"论文 {page_count} 页，超过当届规则上限 {max_pages} 页",
+                [REPORT_PATH.as_posix()],
+            )
+    else:
+        unverified.append("page_limit: 规则快照未登记 max_pages，页数上限未验证")
+    toc_limit = snapshot.get("toc_max_depth")
+    toc_depth = report.get("toc_max_depth")
+    if isinstance(toc_limit, int) and toc_limit > 0:
+        if isinstance(toc_depth, int) and toc_depth > toc_limit:
+            findings.add(
+                "toc_depth_exceeded",
+                "P0",
+                f"目录深度 {toc_depth} 超过当届规则上限 {toc_limit}",
+                [REPORT_PATH.as_posix()],
+            )
+        elif not isinstance(toc_depth, int):
+            unverified.append("toc_depth: 版面审计未记录目录层级")
+    else:
+        unverified.append("toc_depth: 规则快照未登记 toc_max_depth，目录深度未验证")
+
+
+def _check_anonymity(
+    root: Path, snapshot: dict[str, Any], findings: IssueLog, unverified: list[str]
+) -> None:
+    required = snapshot.get("anonymity_required")
+    if required is not True:
+        if required is None:
+            unverified.append("anonymity: 规则快照未登记 anonymity_required，匿名性未验证")
+        return
+    allowlist = [
+        re.compile(item)
+        for item in snapshot.get("anonymity_allowlist", [])
+        if isinstance(item, str)
+    ]
+    source_dir = root / "manuscript" / "source"
+    if not source_dir.is_dir():
+        unverified.append("anonymity: 没有 manuscript/source/ 可供扫描")
+        return
+    hits: list[str] = []
+    for path in sorted(source_dir.rglob("*")):
+        if not path.is_file():
+            continue
+        try:
+            text = path.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            continue
+        reported = False
+        for label, pattern in ANONYMITY_PATTERNS:
+            for match in pattern.finditer(text):
+                captured = match.group(0)
+                if any(item.search(captured) for item in allowlist):
+                    continue
+                hits.append(f"{path.relative_to(root).as_posix()}（{label}）")
+                reported = True
+                break
+            if reported:
+                break
+    if hits:
+        unique = list(dict.fromkeys(hits))
+        findings.add(
+            "anonymity_leak",
+            "P0",
+            f"论文源文件疑似包含身份信息：{'；'.join(unique[:5])}",
+            [item.split("（", 1)[0] for item in unique[:5]],
+        )
+
+
+def _check_filenames(
+    root: Path, snapshot: dict[str, Any], findings: IssueLog, unverified: list[str]
+) -> None:
+    pattern = snapshot.get("filename_pattern")
+    manifest = _read_json(root / SUBMISSION_MANIFEST_PATH)
+    files = manifest.get("files") if isinstance(manifest, dict) else None
+    if not isinstance(files, list) or not files:
+        return
+    compiled = None
+    if isinstance(pattern, str) and pattern.strip():
+        try:
+            compiled = re.compile(pattern)
+        except re.error:
+            findings.add(
+                "invalid_rule_snapshot",
+                "P0",
+                f"规则快照的 filename_pattern 不是合法正则：{pattern}",
+                [RULE_SNAPSHOT_PATH.as_posix()],
+            )
+            return
+    else:
+        unverified.append("filename_pattern: 规则快照未登记命名规则，仅检查不可用字符")
+    for entry in files:
+        if not isinstance(entry, dict):
+            continue
+        relative = entry.get("path")
+        if not isinstance(relative, str) or not relative.strip():
+            continue
+        name = Path(relative.strip()).name
+        if compiled is not None:
+            if not compiled.match(name):
+                findings.add(
+                    "filename_violation",
+                    "P0",
+                    f"提交文件名不符合当届命名规则：{name}",
+                    [relative.strip()],
+                )
+        elif any(ch in name for ch in '\\/:*?"<>|') or any(ch.isspace() for ch in name):
+            findings.add(
+                "filename_violation",
+                "P1",
+                f"提交文件名包含不可用字符：{name}",
+                [relative.strip()],
+            )
+
+
 def _check_manuscript(
     root: Path, state: dict[str, Any], approvals: Any, findings: IssueLog,
     unverified: list[str], hashes: dict[str, str],
 ) -> None:
+    snapshot = _check_rule_snapshot(root, state, findings, unverified)
     inputs = state.get("inputs")
     template = inputs.get("official_template") if isinstance(inputs, dict) else None
     if isinstance(template, dict):
@@ -291,6 +471,8 @@ def _check_manuscript(
                 )
     _require_manuscript_check(root, findings, hashes)
     _require_render_audit(root, findings, hashes)
+    if snapshot is not None:
+        _check_layout_limits(root, snapshot, findings, unverified)
 
 
 def _check_review_ledger(
@@ -353,9 +535,14 @@ def _check_delivery(
     root: Path, state: dict[str, Any], approvals: Any, findings: IssueLog,
     unverified: list[str], hashes: dict[str, str],
 ) -> None:
+    snapshot = _check_rule_snapshot(root, state, findings, unverified)
     _require_render_audit(root, findings, hashes)
     _require_manuscript_check(root, findings, hashes)
     _check_review_ledger(root, findings, unverified)
+    if snapshot is not None:
+        _check_layout_limits(root, snapshot, findings, unverified)
+        _check_anonymity(root, snapshot, findings, unverified)
+        _check_filenames(root, snapshot, findings, unverified)
 
     payload = _read_json(root / SUBMISSION_MANIFEST_PATH)
     if not isinstance(payload, dict):
@@ -395,9 +582,6 @@ def _check_delivery(
                         "submission_hash_mismatch", "P0",
                         f"交付清单哈希不匹配：{relative}", [relative],
                     )
-    unverified.append(
-        "official_page_limit: 需要当届官方规则快照才能校验页数、目录深度与命名"
-    )
 
 
 _STAGE_CHECKS = {

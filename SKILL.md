@@ -79,6 +79,19 @@ correctness, and never an award prediction. A P0 always blocks; every P1 must be
 fixed or explicitly accepted by the user. Missing optional tools are reported as
 `unverified`, never as passing.
 
+## Current-year rule snapshot
+
+Extract the machine-readable rules once per contest into
+`.huawei-modeling/rule-snapshot.json` (see `assets/schemas/rule-snapshot.schema.json`).
+MANUSCRIPT and DELIVERY gates fail while the snapshot is missing or its
+`source_sha256` no longer matches the registered official rules file; page limit,
+table-of-contents depth, anonymity and filename rules are read from it. Leave a rule
+as `null` when the official text does not state it — that check is then reported as
+`unverified` instead of passing.
+
+On Windows consoles whose code page is not UTF-8, run the skill-creator validator
+with `PYTHONUTF8=1` so `SKILL.md` is read as UTF-8.
+
 ## Privacy boundary
 
 This repository stays separate from every contest workspace. Never copy real
